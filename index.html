@@ -1,0 +1,28 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>File Upload Example</title>
+</head>
+<body>
+<div class="container">
+    <h1>File Upload Example</h1>
+    <div class="message">{{.}}</div>
+    <p>Drag/select image</p>
+    <form class="form" method="post" action="/" enctype="multipart/form-data">
+        <fieldset>
+            <input type="file" name="files" id="files" multiple="multiple">
+            <input type="submit" name="submit" value="Submit">
+        </fieldset>
+    </form>
+    <p>or paste link</p>
+    <form class="form" method="post" action="/">
+        <fieldset>
+            <input type="text" name="link" placeholder="link" required="">
+            <input type="submit" name="submit" value="Submit">
+        </fieldset>
+    </form>
+</div>
+</body>
+</html>
+{{end}}
