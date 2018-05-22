@@ -1,7 +1,5 @@
 // Ability to accept JSON requests with BASE64 encoded images.
-// Ability to upload image by its URL (hosted somewhere in Internet).
 // Create thumb square preview (100 x 100 px) for every uploaded image.
-// The following will be appreciated:
 
 // Graceful shutdown of application.
 // Dockerfile and docker-compose.yml which allow to boot up application in a single docker-compose up command.
@@ -19,6 +17,7 @@ import (
 
 	"strings"
 
+	"github.com/disintegration/imaging"
 	"github.com/gorilla/mux"
 )
 
@@ -68,8 +67,15 @@ func upload(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			//} else if contentType == "application/json" {
+			//	err := uploadJson(r)
+			//	if err != nil {
+			//		http.Error(w, err.Error(), http.StatusInternalServerError)
+			//		return
+			//	}
 		} else {
-			fmt.Println(contentType)
+			http.Error(w, "unsupported content-type: "+contentType, http.StatusInternalServerError)
+
 		}
 		display(w, "Success!", "index")
 	default:
@@ -84,7 +90,7 @@ func uploadMultipart(r *http.Request) error {
 	}
 	form := r.MultipartForm
 	//get the *fileheaders
-	files := form.File["files"]
+	files := form.File["image"]
 	for _, fh := range files {
 		//for each fileheader, get a handle to the actual file
 		mimeType := fh.Header.Get("Content-Type")
@@ -95,6 +101,7 @@ func uploadMultipart(r *http.Request) error {
 		if err != nil {
 			return err
 		}
+
 		err = saveFile(file, fh.Filename)
 
 		file.Close()
@@ -102,19 +109,32 @@ func uploadMultipart(r *http.Request) error {
 		if err != nil {
 			return err
 		}
+
+		err = createThumbnail(fh.Filename)
+		if err != nil {
+			log.Println(err.Error())
+		}
 	}
 	return nil
 }
 
 func uploadLink(r *http.Request) error {
-	link := r.FormValue("link")
+	link := r.FormValue("image")
 	resp, err := http.Get(link)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	err = saveFile(resp.Body, link[len(link)-10:])
-	return err
+	if err != nil {
+		return err
+	}
+
+	err = createThumbnail(link[len(link)-10:])
+	if err != nil {
+		log.Println(err.Error())
+	}
+	return nil
 }
 
 func saveFile(file io.Reader, filename string) error {
@@ -127,6 +147,24 @@ func saveFile(file io.Reader, filename string) error {
 	}
 	//copy the uploaded file to the destination file
 	if _, err := io.Copy(dst, file); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createThumbnail(filename string) error {
+	path := fmt.Sprintf("%s/%s", imagesDir, filename)
+	img, err := imaging.Open(path)
+	if err != nil {
+		return err
+	}
+
+	thumb := imaging.Thumbnail(img, 100, 100, imaging.CatmullRom)
+	// save resized image
+	err = imaging.Save(thumb, fmt.Sprintf("%s/thumb_%s", imagesDir, filename))
+
+	if err != nil {
 		return err
 	}
 	return nil
