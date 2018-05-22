@@ -17,8 +17,6 @@ import (
 	"net/http"
 	"os"
 
-	"mime/multipart"
-
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -59,50 +57,69 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		contentType := r.Header.Get("Content-Type")
 		// multipart data upload
 		if strings.HasPrefix(contentType, "multipart/form-data") {
-			uploadMultipart(w, r)
+			err := uploadMultipart(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		} else if contentType == "application/x-www-form-urlencoded" {
-			//uploadByLink(w,r)
+			err := uploadLink(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		} else {
 			fmt.Println(contentType)
 		}
+		display(w, "Success!", "index")
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func uploadMultipart(w http.ResponseWriter, r *http.Request) {
+func uploadMultipart(r *http.Request) error {
 	err := r.ParseMultipartForm(maxUploadSize)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	mf := r.MultipartForm
-	//get the *fileheaders
-	files := mf.File["files"]
-	for _, file := range files {
-		//for each fileheader, get a handle to the actual file
-		err := saveFile(file)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	////display success message.
-	display(w, "Success!", "index")
-}
-
-func saveFile(fh *multipart.FileHeader) error {
-	mimeType := detectContentType(fh)
-	if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/gif" {
-		return fmt.Errorf("file should be an image: got %s", mimeType)
-	}
-	file, err := fh.Open()
-	defer file.Close()
 	if err != nil {
 		return err
 	}
+	form := r.MultipartForm
+	//get the *fileheaders
+	files := form.File["files"]
+	for _, fh := range files {
+		//for each fileheader, get a handle to the actual file
+		mimeType := fh.Header.Get("Content-Type")
+		if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/gif" {
+			return fmt.Errorf("file should be an image: got %s", mimeType)
+		}
+		file, err := fh.Open()
+		if err != nil {
+			return err
+		}
+		err = saveFile(file, fh.Filename)
+
+		file.Close()
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uploadLink(r *http.Request) error {
+	link := r.FormValue("link")
+	resp, err := http.Get(link)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	err = saveFile(resp.Body, link[len(link)-10:])
+	return err
+}
+
+func saveFile(file io.Reader, filename string) error {
 	//create destination file making sure the path is write able.
-	filename := fmt.Sprintf("%s/%s", imagesDir, fh.Filename)
+	filename = fmt.Sprintf("%s/%s", imagesDir, filename)
 	dst, err := os.Create(filename)
 	defer dst.Close()
 	if err != nil {
@@ -113,8 +130,4 @@ func saveFile(fh *multipart.FileHeader) error {
 		return err
 	}
 	return nil
-}
-
-func detectContentType(fh *multipart.FileHeader) string {
-	return fh.Header.Get("Content-Type")
 }
